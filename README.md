@@ -1,3 +1,3 @@
 # Downloader Pro
 
-<img width="1354" height="1128" alt="image" src="https://github.com/user-attachments/assets/3ce338e7-e572-438c-b6cb-7778d3d5d87b" />
+<img width="680" alt="image" src="https://github.com/user-attachments/assets/3ce338e7-e572-438c-b6cb-7778d3d5d87b" />
