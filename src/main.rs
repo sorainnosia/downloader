@@ -28,6 +28,18 @@ use std::io::{Read, Write, Seek, SeekFrom}; // <-- bring blocking traits into sc
 const NOTO_SANS_REGULAR: &[u8] = include_bytes!("../assets/NotoSans-Regular.ttf");
 const NOTO_SANS_BOLD: &[u8] = include_bytes!("../assets/NotoSans-Bold.ttf");
 
+// Download Url Example
+// github assets link :
+//   https://github.com/sorainnosia/image-resizer-advanced/releases/expanded_assets/0.1.1
+// huggingface api link : 
+//   https://huggingface.co/api/datasets/facebook/flores
+// sourceforge.net files link :
+//   https://sourceforge.net/projects/czkawka.mirror/files/10.0.0/
+// archive.org project link :
+//   https://archive.org/download/ms_solitaire_windows_xp
+// wikimedia.org project link :
+//   https://commons.wikimedia.org/wiki/Category:Scenic_wallpaper
+
 // Font definitions
 const HEADING_FONT: Font = Font {
     family: font::Family::Name("Noto Sans"),
@@ -94,6 +106,7 @@ enum DownloadStatus {
     Pending,
     Downloading,
     Completed,
+	Cancelling,
     Failed(String),
     Skipped, // New status for files that already exist
 }
@@ -108,6 +121,7 @@ enum Message {
     ChunkSizeChanged(String),
     StartDownload,
     CancelDownload,
+	UpdateCancelledDownloads,
     ProcessNextUrl(String),
     AddDownloadItems(Vec<DownloadItem>),
     StartDownloadItem(usize),
@@ -285,6 +299,9 @@ impl Application for Downloader {
             Message::StartDownload => {
                 if !self.url_input.is_empty() {
                     self.is_downloading = true;
+					self.cancel_flag = Arc::new(AtomicBool::new(false));
+					self.cancel = Arc::new(tokio_util::sync::CancellationToken::new());
+
                     self.download_items.clear();
                     self.cancel_flag.store(false, Ordering::Relaxed);
                     let _ = self.active_downloads.try_lock().map(|mut m| m.clear());
@@ -304,8 +321,22 @@ impl Application for Downloader {
             Message::CancelDownload => {
                 self.is_downloading = false;
                 self.cancel_flag.store(true, Ordering::Relaxed);
-                Command::none()
+				self.cancel.cancel();
+                Command::perform(
+					async {
+						tokio::time::sleep(Duration::from_millis(500)).await;
+					},
+					|_| Message::UpdateCancelledDownloads
+				)
             }
+			Message::UpdateCancelledDownloads => {
+				for item in &mut self.download_items {
+					if matches!(item.status, DownloadStatus::Cancelling) {
+						item.status = DownloadStatus::Failed("Cancelled by user".to_string());
+					}
+				}
+				Command::none()
+			}
             Message::ProcessNextUrl(url) => {
                 let config = self.config.clone();
                 
@@ -652,26 +683,28 @@ impl Application for Downloader {
             
             for (i, item) in self.download_items.iter().enumerate() {
                 let status_color = match &item.status {
-                    DownloadStatus::Pending => TEXT_MUTED,
-                    DownloadStatus::Downloading => PRIMARY_COLOR,
-                    DownloadStatus::Completed => SUCCESS_COLOR,
-                    DownloadStatus::Failed(_) => ERROR_COLOR,
-                    DownloadStatus::Skipped => WARNING_COLOR,
-                };
-                
-                let status_text = match &item.status {
-                    DownloadStatus::Pending => "Pending",
-                    DownloadStatus::Downloading => "Downloading",
-                    DownloadStatus::Completed => "Completed",
-                    DownloadStatus::Failed(err) => {
-                        if err.len() > 20 {
-                            &err[..20]
-                        } else {
-                            err
-                        }
-                    },
-                    DownloadStatus::Skipped => "Already Exists",
-                };
+					DownloadStatus::Pending => TEXT_MUTED,
+					DownloadStatus::Downloading => PRIMARY_COLOR,
+					DownloadStatus::Cancelling => WARNING_COLOR, // Orange/yellow for cancelling
+					DownloadStatus::Completed => SUCCESS_COLOR,
+					DownloadStatus::Failed(_) => ERROR_COLOR,
+					DownloadStatus::Skipped => WARNING_COLOR,
+				};
+
+				let status_text = match &item.status {
+					DownloadStatus::Pending => "Pending",
+					DownloadStatus::Downloading => "Downloading",
+					DownloadStatus::Cancelling => "Cancelling...",
+					DownloadStatus::Completed => "Completed",
+					DownloadStatus::Failed(err) => {
+						if err.len() > 20 {
+							&err[..20]
+						} else {
+							err
+						}
+					},
+					DownloadStatus::Skipped => "Already Exists",
+				};
                 
                 let size_text = format_size(item.downloaded, item.total_size);
                 
@@ -976,10 +1009,8 @@ fn load_config() -> HashMap<String, DomainConfig> {
     
     let mut url_items = HashMap::new();
     url_items.insert("type".to_string(), vec!["/api/".to_string(), "/".to_string()]);
-    
     let mut url_start_items = HashMap::new();
     url_start_items.insert("repo".to_string(), "/api/".to_string());
-	
 	let mut url_replace_items = HashMap::new();
     url_replace_items.insert("models".to_string(), vec!["/models/".to_string(), "/".to_string()]);
     
@@ -991,6 +1022,62 @@ fn load_config() -> HashMap<String, DomainConfig> {
             ],
             ignore: vec!["thumb".to_string(), "preview".to_string(), "icon".to_string(), "_small".to_string(), "_medium".to_string()],
             download_url: Some("https://huggingface.co/{repo}/resolve/main/{placeholder}".to_string()),
+            url_items: Some(url_items),
+			url_start_items: Some(url_start_items),
+			url_replace_items: Some(url_replace_items)
+        },
+    );
+	
+    let mut url_items = HashMap::new();
+    let mut url_start_items = HashMap::new();
+	let mut url_replace_items = HashMap::new();
+    
+	default_config.insert(
+        "github.com".to_string(),
+        DomainConfig {
+            filter: vec![
+                vec!["<a href=\"".to_string(), "\"".to_string()],
+            ],
+            ignore: vec![],
+            download_url: Some("https://github.com/{placeholder}".to_string()),
+            url_items: Some(url_items),
+			url_start_items: Some(url_start_items),
+			url_replace_items: Some(url_replace_items)
+        },
+    );
+	
+	let mut url_items = HashMap::new();
+    let mut url_start_items = HashMap::new();
+	let mut url_replace_items = HashMap::new();
+    
+	default_config.insert(
+        "sourceforge.net".to_string(),
+        DomainConfig {
+            filter: vec![
+                vec!["<tr title=\"".to_string(), "</tr>".to_string()],
+				vec!["<a href=\"https://sourceforge.net/projects/".to_string(), "/download\"".to_string()],
+            ],
+            ignore: vec![],
+            download_url: Some("https://sourceforge.net/projects/{placeholder}/download".to_string()),
+            url_items: Some(url_items),
+			url_start_items: Some(url_start_items),
+			url_replace_items: Some(url_replace_items)
+        },
+    );
+	
+	let mut url_items = HashMap::new();
+    let mut url_start_items = HashMap::new();
+    url_start_items.insert("repo".to_string(), "/download/".to_string());
+	let mut url_replace_items = HashMap::new();
+    
+	default_config.insert(
+        "archive.org".to_string(),
+        DomainConfig {
+            filter: vec![
+                vec!["<td><a href=\"".to_string(), "\"".to_string()],
+            ],
+            ignore: vec!["/details/".to_string()],
+            download_url: Some("https://archive.org/download/{repo}/{placeholder}".to_string()),
             url_items: Some(url_items),
 			url_start_items: Some(url_start_items),
 			url_replace_items: Some(url_replace_items)
@@ -1056,7 +1143,7 @@ async fn process_url(
                     let end = &patterns[1];
                     
                     // Extract value from URL using the patterns
-                    if let Some(extracted_values) = extract_between(&url, start, end).first() {
+                    if let Some(extracted_values) = extract_between(&format!("{}/", &url), start, end).first() {
                         if !extracted_values.is_empty() {
                             url_replacements.insert(format!("{{{}}}", key), extracted_values.clone());
                         }
@@ -1196,13 +1283,16 @@ async fn process_url(
         // Create download items for all URLs
         let items: Vec<DownloadItem> = urls.into_iter()
             .map(|download_url| {
-                let filename = extract_filename(&download_url);
-				
 				let mut name_betw = String::new();
 				for (url, path2) in &filename_betw {
 					if url.to_string() == download_url.to_string() {
 						name_betw = path2.to_string();
 					}
+				}
+				
+				let mut filename = extract_filename(&download_url);
+				if !name_betw.is_empty() {
+					filename = std::path::Path::new(&name_betw).file_name().and_then(|s| s.to_str()).unwrap_or("download").to_string();
 				}
 				
                 DownloadItem {
@@ -1339,7 +1429,7 @@ async fn download_file_attempt(
     index: usize,
     url: String,
     mut filename: String,
-	name_betw: String,
+	mut name_betw: String,
     output_folder: String,
     parallel: usize,
     chunk_size: usize,
@@ -1352,9 +1442,12 @@ async fn download_file_attempt(
         .await
         .map_err(|e| format!("Failed to create output directory: {}", e))?;
     
-    let mut output_path = PathBuf::from(&output_folder).join(&name_betw);
+	println!("fold {}", output_folder.to_string());
+	let jp = PathBuf::from(format!("{}/{}", output_folder.to_string(), name_betw.to_string()));
+    let mut output_path = jp;//PathBuf::from(&output_folder).join(&name_betw);
 	if name_betw.to_string() == String::from("") {
-		output_path = PathBuf::from(&output_folder).join(&filename);
+		//output_path = PathBuf::from(&output_folder).join(&filename);
+		output_path = PathBuf::from(format!("{}/{}", output_folder.to_string(), filename.to_string()));
 	} else {
 		filename = name_betw;
 	}
@@ -1509,8 +1602,9 @@ async fn download_file_attempt(
 		let mut initial_progress = 0u64;
 		
 		for chunk in &chunks {
-			let chunk_path = PathBuf::from(&output_folder)
-				.join(format!("{}.tmp{}", filename, chunk.chunk_num));
+			//let chunk_path = PathBuf::from(&output_folder)
+				//.join(format!("{}.tmp{}", filename, chunk.chunk_num));
+			let chunk_path = PathBuf::from(format!("{}/{}.tmp{}", output_folder.to_string(), filename.to_string(), chunk.chunk_num));
 			
 			if chunk_path.exists() {
 				if let Ok(metadata) = tokio::fs::metadata(&chunk_path).await {
@@ -1596,8 +1690,10 @@ async fn download_file_attempt(
 					//async move {
 						let permit = semaphore3.acquire().await.unwrap();
 						
-						let output_pathx_clone = PathBuf::from(&output_folder2)
-							.join(format!("{}.tmp{}", filename, chunk.chunk_num));
+						//let output_pathx_clone = PathBuf::from(&output_folder2)
+						//	.join(format!("{}.tmp{}", filename, chunk.chunk_num));
+						let output_pathx_clone = PathBuf::from(format!("{}/{}.tmp{}", output_folder2.to_string(), filename.to_string(), chunk.chunk_num));
+						
 						//println!("o {}", output_pathx_clone.display());
 						
 						//tokio::fs::write("out.txt", output_pathx_clone.display().to_string());
@@ -1699,8 +1795,9 @@ async fn download_file_attempt(
 		
 		let mut incomplete: Vec<ChunkInfo> = Vec::new();
 		for chunk in &chunks {
-			let path = PathBuf::from(&output_folder)
-				.join(format!("{}.tmp{}", filename, chunk.chunk_num));
+			//let path = PathBuf::from(&output_folder)
+				//.join(format!("{}.tmp{}", filename, chunk.chunk_num));
+			let path = PathBuf::from(format!("{}/{}.tmp{}", output_folder.to_string(), filename.to_string(), chunk.chunk_num));
 
 			let expected_size = chunk.end - chunk.start + 1;
 			match tokio::fs::metadata(&path).await {
@@ -1729,8 +1826,9 @@ async fn download_file_attempt(
 					return Err("Cancelled".to_string());
 				}
 				
-				let chunk_path = PathBuf::from(&output_folder)
-					.join(format!("{}.tmp{}", filename, chunk_num));
+				//let chunk_path = PathBuf::from(&output_folder)
+					//.join(format!("{}.tmp{}", filename, chunk_num));
+				let chunk_path = PathBuf::from(format!("{}/{}.tmp{}", output_folder.to_string(), filename.to_string(), chunk_num));
 				
 				let mut chunk_file = File::open(&chunk_path)
 					.await
@@ -1771,8 +1869,10 @@ async fn download_file_attempt(
 					return Err("Cancelled".to_string());
 				}
 				
-				let chunk_path = PathBuf::from(&output_folder)
-					.join(format!("{}.tmp{}", filename, chunk_num));
+				//let chunk_path = PathBuf::from(&output_folder)
+				//	.join(format!("{}.tmp{}", filename, chunk_num));
+				let chunk_path = PathBuf::from(format!("{}/{}.tmp{}", output_folder.to_string(), filename.to_string(), chunk_num));
+				
 				let _ = tokio::fs::remove_file(&chunk_path).await;
 			}
 			
