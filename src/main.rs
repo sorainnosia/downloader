@@ -1,10 +1,11 @@
 // Advanced Image Resizer with Beautiful UI
-//#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use iced::{
     executor, font, theme,
     widget::{button, column, container, progress_bar, row, scrollable, text, text_input, Space,
 	horizontal_rule},
+	window::{Settings as WinSettings},
     Alignment, Application, Color, Command, Element, Font, Length, Settings, Size, Theme, Background, Border,
 };
 use futures_util::StreamExt;
@@ -34,11 +35,9 @@ const NOTO_SANS_BOLD: &[u8] = include_bytes!("../assets/NotoSans-Bold.ttf");
 // huggingface api link : 
 //   https://huggingface.co/api/datasets/facebook/flores
 // sourceforge.net files link :
-//   https://sourceforge.net/projects/czkawka.mirror/files/10.0.0/
+//   https://sourceforge.net/projects/czkawka.mirror/files/10.0.0
 // archive.org project link :
 //   https://archive.org/download/ms_solitaire_windows_xp
-// wikimedia.org project link :
-//   https://commons.wikimedia.org/wiki/Category:Scenic_wallpaper
 
 // Font definitions
 const HEADING_FONT: Font = Font {
@@ -113,11 +112,13 @@ enum DownloadStatus {
 
 #[derive(Debug, Clone)]
 enum Message {
+	None(String),
 	WindowCloseRequested,
 	ForceExit,
     UrlChanged(String),
     OutputFolderChanged(String),
-    ParallelChanged(String),
+    ParallelFileChanged(String),
+    ParallelChunkChanged(String),
     ChunkSizeChanged(String),
     StartDownload,
     CancelDownload,
@@ -129,13 +130,17 @@ enum Message {
     UpdateDownloadStatus(usize, DownloadStatus),
     UpdateTotalSize(usize, u64),
     ProcessNextBatch,
+    CheckForNextDownload,
+    ToggleHelp,
+    CloseHelp,
     Tick,
 }
 
 struct Downloader {
     url_input: String,
     output_folder: String,
-    parallel_input: String,
+    parallel_file_input: String,
+    parallel_chunk_input: String,
     chunk_size_input: String,
     is_downloading: bool,
     download_items: Vec<DownloadItem>,
@@ -144,21 +149,48 @@ struct Downloader {
     urls_to_process: Vec<String>,
     active_downloads: Arc<Mutex<HashMap<usize, Arc<AtomicF64>>>>,
 	cancel: Arc<tokio_util::sync::CancellationToken>, // add tokio-util = "0.7"
+    file_semaphore: Option<Arc<Semaphore>>,
+    active_file_downloads: Arc<AtomicU64>,
+    show_help: bool,
 }
+//static APP_ICO: &[u8] = include_bytes!("../icon.ico");
+//fn app_icon_from_ico() -> Option<iced::window::icon::Icon> {
+//    let bytes = include_bytes!("../assets/app.ico");
+//    let dyn_img = image::load_from_memory_with_format(bytes, ImageFormat::Ico).ok()?;
+//    let (w, h) = dyn_img.dimensions();                 // u32, u32
+//    let rgba = dyn_img.to_rgba8().into_raw();          // Vec<u8> length == w*h*4
+
+//    iced::window::icon::Icon::from_rgba(rgba, w, h).ok()
+//}
 
 // Just add this to your existing Downloader implementation:
 
 fn main() -> iced::Result {
+	//let icon = app_icon_from_ico();
     let mut settings = Settings::default();
-    settings.window.size = Size::new(900.0, 450.0);
-    settings.window.min_size = Some(Size::new(800.0, 450.0));
+    settings.window.size = Size::new(720.0, 450.0);
+    settings.window.min_size = Some(Size::new(720.0, 450.0));
     settings.fonts = vec![
         include_bytes!("../assets/NotoSans-Regular.ttf").as_slice().into(),
         include_bytes!("../assets/NotoSans-Bold.ttf").as_slice().into(),
     ];
     settings.default_font = BODY_FONT;
     settings.default_text_size = 14.into();
-    
+    // let settings = Settings {
+		// window: WinSettings {
+			// size: Size::new(720.0, 450.0),
+			// min_size: Some(Size::new(720.0, 450.0)),
+			// icon, // same .ico as your EXE, via include_bytes! helper
+			// ..Default::default()
+		// },
+		// fonts: vec![
+			// include_bytes!("../assets/NotoSans-Regular.ttf").as_slice().into(),
+			// include_bytes!("../assets/NotoSans-Bold.ttf").as_slice().into(),
+		// ],
+		// default_font: BODY_FONT,
+		// default_text_size: 14.into(),
+		// ..Default::default()
+	// };
     Downloader::run(settings)
 }
 
@@ -223,7 +255,8 @@ impl Application for Downloader {
                     .unwrap_or_default()
                     .to_string_lossy()
                     .to_string(),
-                parallel_input: "7".to_string(),
+                parallel_file_input: "1".to_string(),
+                parallel_chunk_input: "7".to_string(),
                 chunk_size_input: "100MB".to_string(),
                 is_downloading: false,
                 download_items: Vec::new(),
@@ -231,7 +264,10 @@ impl Application for Downloader {
                 cancel_flag: Arc::new(AtomicBool::new(false)),
                 urls_to_process: Vec::new(),
                 active_downloads: Arc::new(Mutex::new(HashMap::new())),
-				cancel: Arc::new(tokio_util::sync::CancellationToken::new())
+				cancel: Arc::new(tokio_util::sync::CancellationToken::new()),
+                file_semaphore: None,
+                active_file_downloads: Arc::new(AtomicU64::new(0)),
+                show_help: false,
             },
             Command::none()
         )
@@ -247,6 +283,8 @@ impl Application for Downloader {
                 self.url_input = url;
                 Command::none()
             }
+            
+            Message::None(str) => { Command::none() }
 			
 			Message::ForceExit => {
 				std::process::exit(0);
@@ -288,8 +326,12 @@ impl Application for Downloader {
                 self.output_folder = folder;
                 Command::none()
             }
-            Message::ParallelChanged(parallel) => {
-                self.parallel_input = parallel;
+            Message::ParallelFileChanged(parallel) => {
+                self.parallel_file_input = parallel;
+                Command::none()
+            }
+            Message::ParallelChunkChanged(parallel) => {
+                self.parallel_chunk_input = parallel;
                 Command::none()
             }
             Message::ChunkSizeChanged(chunk_size) => {
@@ -305,6 +347,11 @@ impl Application for Downloader {
                     self.download_items.clear();
                     self.cancel_flag.store(false, Ordering::Relaxed);
                     let _ = self.active_downloads.try_lock().map(|mut m| m.clear());
+                    
+                    // Create file semaphore
+                    let parallel_files = self.parallel_file_input.parse::<usize>().unwrap_or(1);
+                    self.file_semaphore = Some(Arc::new(Semaphore::new(parallel_files)));
+                    self.active_file_downloads.store(0, Ordering::Relaxed);
                     
                     // Generate URLs from input
                     self.urls_to_process = generate_urls(&self.url_input);
@@ -354,17 +401,27 @@ impl Application for Downloader {
             Message::AddDownloadItems(items) => {
                 let start_index = self.download_items.len();
                 
-                // Add items and initialize their states
+                // Add items
                 for item in items {
                     self.download_items.push(item);
                 }
                 
-                // Start downloading first item
-                if start_index < self.download_items.len() {
-                    Command::batch(vec![
-                        Command::perform(async move { start_index }, Message::StartDownloadItem),
-                        Command::perform(async {}, |_| Message::Tick),
-                    ])
+                // Start downloading files based on parallel file setting
+                let parallel_files = self.parallel_file_input.parse::<usize>().unwrap_or(1);
+                let mut commands = vec![];
+                
+                // Start up to parallel_files downloads
+                for i in 0..parallel_files.min(self.download_items.len() - start_index) {
+                    commands.push(Command::perform(
+                        async move { start_index + i }, 
+                        Message::StartDownloadItem
+                    ));
+                }
+                
+                commands.push(Command::perform(async {}, |_| Message::Tick));
+                
+                if commands.len() > 1 {
+                    Command::batch(commands)
                 } else {
                     Command::none()
                 }
@@ -373,16 +430,20 @@ impl Application for Downloader {
                 if let Some(item) = self.download_items.get_mut(index) {
                     if matches!(item.status, DownloadStatus::Pending) {
                         item.status = DownloadStatus::Downloading;
+                        self.active_file_downloads.fetch_add(1, Ordering::Relaxed);
                         
 						let name_betw = item.name_betw.to_string();
                         let url = item.url.clone();
                         let filename = item.filename.clone();
                         let output_folder = self.output_folder.clone();
-                        let parallel = self.parallel_input.parse::<usize>().unwrap_or(1);
+                        let parallel_chunks = self.parallel_chunk_input.parse::<usize>().unwrap_or(7);
                         let chunk_size = parse_chunk_size(&self.chunk_size_input);
                         let cancel_flag = self.cancel_flag.clone();
                         let active_downloads = self.active_downloads.clone();
                         let cancel_token = self.cancel.clone();
+                        let file_semaphore = self.file_semaphore.clone();
+                        let active_file_downloads = self.active_file_downloads.clone();
+                        
                         // First get the file size
                         let url_clone = url.clone();
                         return Command::batch(vec![
@@ -414,17 +475,19 @@ impl Application for Downloader {
                                 }
                             ),
                             Command::perform(
-                                download_file_async(
+                                download_file_with_semaphore(
                                     index,
                                     url,
                                     filename,
 									name_betw,
                                     output_folder,
-                                    parallel,
+                                    parallel_chunks,
                                     chunk_size,
                                     cancel_flag,
                                     active_downloads,
-									cancel_token.clone()
+									cancel_token,
+                                    file_semaphore,
+                                    active_file_downloads,
                                 ),
                                 move |result| match result {
                                     Ok((total, downloaded)) => {
@@ -442,12 +505,7 @@ impl Application for Downloader {
                     }
                 }
                 
-                // Check for next item to download
-                if index + 1 < self.download_items.len() {
-                    Command::perform(async move { index + 1 }, Message::StartDownloadItem)
-                } else {
-                    Command::perform(async {}, |_| Message::ProcessNextBatch)
-                }
+                Command::none()
             }
             Message::UpdateTotalSize(index, total_size) => {
                 if let Some(item) = self.download_items.get_mut(index) {
@@ -478,6 +536,8 @@ impl Application for Downloader {
                     
                     // Clean up active downloads when complete
                     if matches!(status, DownloadStatus::Completed | DownloadStatus::Failed(_) | DownloadStatus::Skipped) {
+                        self.active_file_downloads.fetch_sub(1, Ordering::Relaxed);
+                        
                         let active_downloads = self.active_downloads.clone();
                         tokio::spawn(async move {
                             let mut downloads = active_downloads.lock().await;
@@ -486,16 +546,38 @@ impl Application for Downloader {
                     }
                 }
                 
-                // Check for next item to download after this one completes
-                if matches!(status, DownloadStatus::Completed | DownloadStatus::Failed(_) | DownloadStatus::Skipped) {
-                    if index + 1 < self.download_items.len() {
-                        return Command::perform(async move { index + 1 }, Message::StartDownloadItem);
-                    } else {
-                        return Command::perform(async {}, |_| Message::ProcessNextBatch);
+                // Check if we should start more downloads
+                Command::perform(async {}, |_| Message::CheckForNextDownload)
+            }
+            Message::CheckForNextDownload => {
+                let parallel_files = self.parallel_file_input.parse::<usize>().unwrap_or(1);
+                let active_count = self.active_file_downloads.load(Ordering::Relaxed);
+                
+                // Find next pending downloads to start
+                let mut commands = vec![];
+                let mut started = 0;
+                
+                for (index, item) in self.download_items.iter().enumerate() {
+                    if matches!(item.status, DownloadStatus::Pending) && 
+                       (active_count + started) < parallel_files as u64 {
+                        commands.push(Command::perform(
+                            async move { index }, 
+                            Message::StartDownloadItem
+                        ));
+                        started += 1;
                     }
                 }
                 
-                Command::none()
+                // Check if we need to process more URLs
+                if commands.is_empty() && active_count == 0 {
+                    return Command::perform(async {}, |_| Message::ProcessNextBatch);
+                }
+                
+                if !commands.is_empty() {
+                    Command::batch(commands)
+                } else {
+                    Command::none()
+                }
             }
             Message::ProcessNextBatch => {
                 if !self.urls_to_process.is_empty() {
@@ -515,6 +597,14 @@ impl Application for Downloader {
                     self.is_downloading = false;
                 }
                 
+                Command::none()
+            }
+            Message::ToggleHelp => {
+                self.show_help = !self.show_help;
+                Command::none()
+            }
+            Message::CloseHelp => {
+                self.show_help = false;
                 Command::none()
             }
             Message::Tick => {
@@ -604,9 +694,19 @@ impl Application for Downloader {
                 // Parallel downloads and chunk size
                 row![
                     labeled_input(
-                        "Parallel Downloads",
-                        text_input("1", &self.parallel_input)
-                            .on_input(Message::ParallelChanged)
+                        "Parallel Files",
+                        text_input("1", &self.parallel_file_input)
+                            .on_input(Message::ParallelFileChanged)
+                            .padding([4, 8])
+                            .width(Length::Fixed(100.0))
+                            .font(BODY_FONT)
+                            .size(14)
+                    ),
+                    Space::with_width(24),
+                    labeled_input(
+                        "Parallel Chunks",
+                        text_input("7", &self.parallel_chunk_input)
+                            .on_input(Message::ParallelChunkChanged)
                             .padding([4, 8])
                             .width(Length::Fixed(100.0))
                             .font(BODY_FONT)
@@ -627,33 +727,53 @@ impl Application for Downloader {
         );
 
         // Action buttons
+        let help_button = button(
+            text("?")
+                .font(HEADING_FONT)
+                .size(14)
+                .horizontal_alignment(iced::alignment::Horizontal::Center)
+        )
+        .on_press(Message::ToggleHelp)
+        .padding([8, 12])
+        .style(theme::Button::Secondary)
+        .width(Length::Fixed(40.0));
+        
+        let main_button = if self.is_downloading {
+            button(
+                text("Cancel Download")
+                    .font(HEADING_FONT)
+                    .size(14)
+                    .horizontal_alignment(iced::alignment::Horizontal::Center)
+            )
+            .on_press(Message::CancelDownload)
+            .padding([8, 10])
+            .style(theme::Button::Destructive)
+            .width(Length::Fixed(180.0))
+        } else {
+            button(
+                text("Start Download")
+                    .font(HEADING_FONT)
+                    .size(13)
+                    .horizontal_alignment(iced::alignment::Horizontal::Center)
+            )
+            .on_press(Message::StartDownload)
+            .padding([8, 10])
+            .style(theme::Button::Primary)
+            .width(Length::Fixed(180.0))
+        };
+        
         let action_section = container(
-            if self.is_downloading {
-                button(
-                    text("Cancel Download")
-                        .font(HEADING_FONT)
-                        .size(14)
-                        .horizontal_alignment(iced::alignment::Horizontal::Center)
-                )
-                .on_press(Message::CancelDownload)
-                .padding([8, 10])
-                .style(theme::Button::Destructive)
-                .width(Length::Fixed(180.0))
-            } else {
-                button(
-                    text("Start Download")
-                        .font(HEADING_FONT)
-                        .size(13)
-                        .horizontal_alignment(iced::alignment::Horizontal::Center)
-                )
-                .on_press(Message::StartDownload)
-                .padding([8, 10])
-                .style(theme::Button::Primary)
-                .width(Length::Fixed(180.0))
-            }
+            row![
+                Space::with_width(Length::Fill),
+                help_button,
+                Space::with_width(8),
+                main_button,
+                Space::with_width(Length::Fill),
+            ]
+            .align_items(Alignment::Center)
         )
         .width(Length::Fill)
-        .center_x();
+        .padding(0);
 
         // Downloads table
         let downloads_card = if !self.download_items.is_empty() {
@@ -783,12 +903,20 @@ impl Application for Downloader {
                 table_body = table_body.push(row_container);
             }
             
+            // Add download statistics
+            let active_downloads = self.active_file_downloads.load(Ordering::Relaxed);
+            let stats_text = format!(
+                "{} file(s) - {} downloading", 
+                self.download_items.len(),
+                active_downloads
+            );
+            
             card_container(
                 column![
                     row![
                         section_title("Downloads"),
                         Space::with_width(Length::Fill),
-                        text(format!("{} file(s)", self.download_items.len()))
+                        text(stats_text)
                             .font(BODY_FONT)
                             .size(12)
                             .style(TEXT_MUTED),
@@ -828,11 +956,121 @@ impl Application for Downloader {
             ].spacing(0)
         );
 
-        container(content)
+        let main_view = container(content)
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(theme::Container::Custom(Box::new(BackgroundContainer)))
+            .style(theme::Container::Custom(Box::new(BackgroundContainer)));
+        
+        // Help overlay
+        if self.show_help {
+            let help_content = card_container(
+                column![
+                    row![
+                        section_title("Example Download URLs"),
+                        Space::with_width(Length::Fill),
+                        button(
+                            text("X")
+                                .size(16)
+                                .horizontal_alignment(iced::alignment::Horizontal::Center)
+                        )
+                        .on_press(Message::CloseHelp)
+                        .padding([4, 8])
+                        .style(theme::Button::Text),
+                    ],
+                    
+                    Space::with_height(16),
+                    
+                    //labeled_input(
+                        text("GitHub Release:")
+			            .size(13)
+			            .font(BODY_FONT)
+			            .style(TEXT_SECONDARY),
+			            Space::with_height(6),
+			            //"GitHub Release:",
+                        text_input("", "https://github.com/sorainnosia/image-resizer-advanced/releases/expanded_assets/0.1.1")
+                            .padding([4, 8])
+                            .font(BODY_FONT)
+                            .on_input(Message::None)
+                            .size(13),
+                    //),
+                    
+                    Space::with_height(12),
+                    
+                    //labeled_input(
+                        text("Huggingface API:")
+			            .size(13)
+			            .font(BODY_FONT)
+			            .style(TEXT_SECONDARY),
+			            Space::with_height(6),
+			            //"Huggingface API:",
+                        text_input("", "https://huggingface.co/api/datasets/facebook/flores")
+                            .padding([4, 8])
+                            .font(BODY_FONT)
+                            .on_input(Message::None)
+                            .size(13),
+                    //),
+                    
+                    Space::with_height(12),
+                    
+                    //labeled_input(
+                        text("SourceForge Release:")
+			            .size(13)
+			            .font(BODY_FONT)
+			            .style(TEXT_SECONDARY),
+			            Space::with_height(6),
+			            //"SourceForge Release:",
+                        text_input("", "https://sourceforge.net/projects/czkawka.mirror/files/10.0.0")
+                            .padding([4, 8])
+                            .font(BODY_FONT)
+                            .on_input(Message::None)
+                            .size(13),
+                   // ),
+                    
+                    Space::with_height(12),
+                    
+                    //labeled_input(
+                    	text("Archive.org Downloads:")
+			            .size(13)
+			            .font(BODY_FONT)
+			            .style(TEXT_SECONDARY),
+			            Space::with_height(6),
+                        //"Archive.org Downloads:",
+                        text_input("", "https://archive.org/download/ms_solitaire_windows_xp")
+                            .padding([4, 8])
+                            .font(BODY_FONT)
+                            .on_input(Message::None)
+                            .size(13),
+                    //),
+                    
+                    Space::with_height(16),
+                    
+                    container(
+                        text("Click on any URL above to select and copy it")
+                            .font(BODY_FONT)
+                            .size(12)
+                            .style(TEXT_MUTED)
+                    )
+                    .width(Length::Fill)
+                    .center_x(),
+                ].spacing(0)
+            );
+            
+            // Create overlay with modal centered
+            container(
+                container(help_content)
+                    .max_width(600)
+                    .center_x()
+                    .center_y()
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x()
+            .center_y()
+            .style(theme::Container::Custom(Box::new(OverlayBackground)))
             .into()
+        } else {
+            main_view.into()
+        }
     }
 
     fn theme(&self) -> Theme {
@@ -984,6 +1222,18 @@ impl container::StyleSheet for TableRowOdd {
     fn appearance(&self, _style: &Self::Style) -> container::Appearance {
         container::Appearance {
             background: Some(Background::Color(Color::from_rgb(0.98, 0.98, 0.99))),
+            ..Default::default()
+        }
+    }
+}
+
+struct OverlayBackground;
+impl container::StyleSheet for OverlayBackground {
+    type Style = Theme;
+    
+    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
+        container::Appearance {
+            background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.4))),
             ..Default::default()
         }
     }
@@ -1370,6 +1620,43 @@ struct ChunkInfo {
     start: u64,
     end: u64,
     chunk_num: usize,
+}
+
+// New function that wraps download_file_async with file semaphore
+async fn download_file_with_semaphore(
+    index: usize,
+    url: String,
+    filename: String,
+    name_betw: String,
+    output_folder: String,
+    parallel_chunks: usize,
+    chunk_size: usize,
+    cancel_flag: Arc<AtomicBool>,
+    active_downloads: Arc<Mutex<HashMap<usize, Arc<AtomicF64>>>>,
+    cancel_token: Arc<tokio_util::sync::CancellationToken>,
+    file_semaphore: Option<Arc<Semaphore>>,
+    active_file_downloads: Arc<AtomicU64>,
+) -> Result<(u64, u64), String> {
+    // Acquire file semaphore if it exists
+    let _permit = if let Some(sem) = &file_semaphore {
+        Some(sem.acquire().await.map_err(|e| format!("Failed to acquire semaphore: {}", e))?)
+    } else {
+        None
+    };
+    
+    // Call the original download function
+    download_file_async(
+        index,
+        url,
+        filename,
+        name_betw,
+        output_folder,
+        parallel_chunks,
+        chunk_size,
+        cancel_flag,
+        active_downloads,
+        cancel_token,
+    ).await
 }
 
 async fn download_file_async(
@@ -1805,7 +2092,7 @@ async fn download_file_attempt(
 					// ok
 				}
 				Ok(meta) => {
-					// short or too long – treat as incomplete; we will resume from meta.len()
+					// short or too long — treat as incomplete; we will resume from meta.len()
 					incomplete.push(chunk.clone());
 				}
 				Err(_) => {
