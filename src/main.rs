@@ -33,7 +33,7 @@ const NOTO_SANS_BOLD: &[u8] = include_bytes!("../assets/NotoSans-Bold.ttf");
 // github assets link :
 //   https://github.com/sorainnosia/image-resizer-advanced/releases/expanded_assets/0.1.1
 // huggingface api link : 
-//   https://huggingface.co/api/datasets/facebook/flores
+//   https://huggingface.co/api/models/hexgrad/Kokoro-82M
 // sourceforge.net files link :
 //   https://sourceforge.net/projects/czkawka.mirror/files/10.0.0
 // archive.org project link :
@@ -1003,7 +1003,7 @@ impl Application for Downloader {
 			            .style(TEXT_SECONDARY),
 			            Space::with_height(6),
 			            //"Huggingface API:",
-                        text_input("", "https://huggingface.co/api/datasets/facebook/flores")
+                        text_input("", "https://huggingface.co/api/models/hexgrad/Kokoro-82M")
                             .padding([4, 8])
                             .font(BODY_FONT)
                             .on_input(Message::None)
