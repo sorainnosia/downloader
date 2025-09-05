@@ -1333,6 +1333,24 @@ fn load_config() -> HashMap<String, DomainConfig> {
 			url_replace_items: Some(url_replace_items)
         },
     );
+	
+	let mut url_items = HashMap::new();
+    let mut url_start_items = HashMap::new();
+	let mut url_replace_items = HashMap::new();
+    
+	default_config.insert(
+        "cdimage.ubuntu.com".to_string(),
+        DomainConfig {
+            filter: vec![
+                vec!["<a href=\"".to_string(), "\"".to_string()],
+            ],
+            ignore: vec!["#".to_string(), "?".to_string(), "netboot".to_string(), "SHA256".to_string(), "BitTorrent".to_string(), "Install".to_string(), "BurningIso".to_string(), "HowTo".to_string(), ".uk".to_string(), ".com".to_string()],
+            download_url: Some("https://cdimage.ubuntu.com/ubuntu/releases/24.04/release/{placeholder}".to_string()),
+            url_items: Some(url_items),
+			url_start_items: Some(url_start_items),
+			url_replace_items: Some(url_replace_items)
+        },
+    );
     
     // Only write default config if file doesn't exist
     if !config_path.exists() {
@@ -1457,6 +1475,8 @@ async fn process_url(
         if let Some(download_url_template) = &domain_config.download_url {
             // Use DownloadUrl template with filter results as placeholders
             for result in results {
+				
+				
                 let trimmed_result = result.trim();
                 // Skip empty results or results that look like HTML
                 if !trimmed_result.is_empty() && !trimmed_result.contains('<') {
@@ -1474,6 +1494,9 @@ async fn process_url(
                         trimmed_result.to_string()
                     };
                     
+					if domain_config.ignore.iter().any(|ignore| trimmed_result.contains(ignore)) {
+						continue;
+					}
                     // Start with the download URL template
                     let mut download_url = download_url_template.replace("{placeholder}", &placeholder_value);
                     
@@ -1526,9 +1549,9 @@ async fn process_url(
         }
         
         // Apply ignore filters
-        urls.retain(|url| {
-            !domain_config.ignore.iter().any(|ignore| url.contains(ignore))
-        });
+        //urls.retain(|url| {
+        //    !domain_config.ignore.iter().any(|ignore| url.contains(ignore))
+        //});
         
         // Create download items for all URLs
         let items: Vec<DownloadItem> = urls.into_iter()
@@ -1995,6 +2018,11 @@ async fn download_file_attempt(
 							Ok(m) => m.len().min(expected_size),
 							Err(_) => 0,
 						};
+						let ccx = cancel_flag4.clone();
+						if ccx.load(Ordering::Relaxed) {
+							return Err("Cancelled".into());
+						}
+									
 						//println!("{}", "aaa");
 						let mut dest = tokio::fs::OpenOptions::new()
 							.create(true)     // create if missing
