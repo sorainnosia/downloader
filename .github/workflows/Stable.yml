@@ -1,14 +1,13 @@
 name: Stable
 on: [push]
 
-
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: false
   GIT_TERMINAL_PROMPT: 0
   
 jobs:
   build-linux-x64:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout
