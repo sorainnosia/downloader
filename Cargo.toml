@@ -33,8 +33,9 @@ rustflags = ["-Ctarget-feature=+crt-static"]
 rustflags = ["-Ctarget-feature=+crt-static"]
 
 [profile.release]
-#opt-level = 3       # Optimize for speed
-#lto = true          # Enable link-time optimization
-#codegen-units = 1   # Reduce number of codegen units to increase optimizations
-#strip = true        # Strip symbols from binary
+opt-level = 3       # Optimize for speed
+lto = true          # Enable link-time optimization
+codegen-units = 1   # Reduce number of codegen units to increase optimizations
+strip = true        # Strip symbols from binary
+
 
