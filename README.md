@@ -1,6 +1,6 @@
 # Downloader Pro
 
-<img width="650" alt="image" src="https://github.com/user-attachments/assets/c9e1cb6f-e05a-41bf-9e1c-2eae5cc06f19" />
+<img width="1354" height="1128" alt="image" src="https://github.com/user-attachments/assets/81dc757e-d83a-45f3-872a-94da72d2f4f7" />
 
 ## Example
 1. Github : `https://github.com/sorainnosia/image-resizer-advanced/releases/expanded_assets/0.1.1`
