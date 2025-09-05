@@ -168,8 +168,8 @@ struct Downloader {
 fn main() -> iced::Result {
 	//let icon = app_icon_from_ico();
     let mut settings = Settings::default();
-    settings.window.size = Size::new(720.0, 450.0);
-    settings.window.min_size = Some(Size::new(720.0, 450.0));
+    settings.window.size = Size::new(900.0, 450.0);
+    settings.window.min_size = Some(Size::new(900.0, 450.0));
     settings.fonts = vec![
         include_bytes!("../assets/NotoSans-Regular.ttf").as_slice().into(),
         include_bytes!("../assets/NotoSans-Bold.ttf").as_slice().into(),
