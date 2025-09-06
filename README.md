@@ -13,3 +13,4 @@
 8. Rust : `https://forge.rust-lang.org/infra/other-installation-methods.html`
 9. 7-zip : `https://7-zip.org/download.html`
 10. Python : `https://www.python.org/ftp/python/3.9.9/`
+11. Go : `https://go.dev/dl/`
