@@ -12,3 +12,4 @@
 7. Dotnet : `https://builds.dotnet.microsoft.com/dotnet/release-metadata/9.0/releases.json`
 8. Rust : `https://forge.rust-lang.org/infra/other-installation-methods.html`
 9. 7-zip : `https://7-zip.org/download.html`
+10. Python : `https://www.python.org/ftp/python/3.9.9/`
