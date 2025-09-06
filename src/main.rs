@@ -38,6 +38,8 @@ const NOTO_SANS_BOLD: &[u8] = include_bytes!("../assets/NotoSans-Bold.ttf");
 //   https://sourceforge.net/projects/czkawka.mirror/files/10.0.0
 // archive.org project link :
 //   https://archive.org/download/ms_solitaire_windows_xp
+// kernel.org link :
+//   https://cdn.kernel.org/pub/linux/kernel/v6.x/
 
 // Font definitions
 const HEADING_FONT: Font = Font {
@@ -81,8 +83,16 @@ struct DomainConfig {
     ignore: Vec<String>,
     #[serde(rename = "DownloadUrl", skip_serializing_if = "Option::is_none")]
     download_url: Option<String>,
+    #[serde(rename = "Page2Url", skip_serializing_if = "Option::is_none")]
+    page2_url: Option<String>,
+	#[serde(rename = "Page2Ignore")]
+    page2_ignore: Vec<String>,
+	#[serde(rename = "Page2Filter")]
+    page2_filter: Vec<Vec<String>>,
     #[serde(rename = "UrlItems", skip_serializing_if = "Option::is_none")]
     url_items: Option<HashMap<String, Vec<String>>>,
+    #[serde(rename = "HtmlItems", skip_serializing_if = "Option::is_none")]
+    html_items: Option<HashMap<String, Vec<String>>>,
     #[serde(rename = "UrlStartItems", skip_serializing_if = "Option::is_none")]
     url_start_items: Option<HashMap<String, String>>,
 	#[serde(rename = "UrlReplaceItems", skip_serializing_if = "Option::is_none")]
@@ -386,9 +396,10 @@ impl Application for Downloader {
 			}
             Message::ProcessNextUrl(url) => {
                 let config = self.config.clone();
+				let cancel = self.cancel_flag.clone();
                 
                 Command::perform(
-                    process_url(url.clone(), config),
+                    process_url(url.clone(), config, cancel),
                     move |result| match result {
                         Ok(items) => Message::AddDownloadItems(items),
                         Err(e) => {
@@ -1258,7 +1269,8 @@ fn load_config() -> HashMap<String, DomainConfig> {
     let mut default_config = HashMap::new();
     
     let mut url_items = HashMap::new();
-    url_items.insert("type".to_string(), vec!["/api/".to_string(), "/".to_string()]);
+	url_items.insert("type".to_string(), vec!["/api/".to_string(), "/".to_string()]);
+    let mut html_items = HashMap::new();
     let mut url_start_items = HashMap::new();
     url_start_items.insert("repo".to_string(), "/api/".to_string());
 	let mut url_replace_items = HashMap::new();
@@ -1271,14 +1283,19 @@ fn load_config() -> HashMap<String, DomainConfig> {
                 vec!["\"rfilename\":\"".to_string(), "\"".to_string()],
             ],
             ignore: vec!["thumb".to_string(), "preview".to_string(), "icon".to_string(), "_small".to_string(), "_medium".to_string()],
+			page2_url: None,
+			page2_ignore: vec![],
+			page2_filter: vec![vec![]],
             download_url: Some("https://huggingface.co/{repo}/resolve/main/{placeholder}".to_string()),
             url_items: Some(url_items),
+			html_items: Some(html_items),
 			url_start_items: Some(url_start_items),
 			url_replace_items: Some(url_replace_items)
         },
     );
 	
     let mut url_items = HashMap::new();
+    let mut html_items = HashMap::new();
     let mut url_start_items = HashMap::new();
 	let mut url_replace_items = HashMap::new();
     
@@ -1288,15 +1305,20 @@ fn load_config() -> HashMap<String, DomainConfig> {
             filter: vec![
                 vec!["<a href=\"".to_string(), "\"".to_string()],
             ],
-            ignore: vec![],
+            ignore: vec!["/refs/tags/".to_string()],
+			page2_url: None,
+			page2_ignore: vec![],
+			page2_filter: vec![vec![]],
             download_url: Some("https://github.com/{placeholder}".to_string()),
             url_items: Some(url_items),
+			html_items: Some(html_items),
 			url_start_items: Some(url_start_items),
 			url_replace_items: Some(url_replace_items)
         },
     );
 	
 	let mut url_items = HashMap::new();
+    let mut html_items = HashMap::new();
     let mut url_start_items = HashMap::new();
 	let mut url_replace_items = HashMap::new();
     
@@ -1308,14 +1330,19 @@ fn load_config() -> HashMap<String, DomainConfig> {
 				vec!["<a href=\"https://sourceforge.net/projects/".to_string(), "/download\"".to_string()],
             ],
             ignore: vec![],
+			page2_url: None,
+			page2_ignore: vec![],
+			page2_filter: vec![vec![]],
             download_url: Some("https://sourceforge.net/projects/{placeholder}/download".to_string()),
             url_items: Some(url_items),
+			html_items: Some(html_items),
 			url_start_items: Some(url_start_items),
 			url_replace_items: Some(url_replace_items)
         },
     );
 	
 	let mut url_items = HashMap::new();
+    let mut html_items = HashMap::new();
     let mut url_start_items = HashMap::new();
     url_start_items.insert("repo".to_string(), "/download/".to_string());
 	let mut url_replace_items = HashMap::new();
@@ -1327,14 +1354,20 @@ fn load_config() -> HashMap<String, DomainConfig> {
                 vec!["<td><a href=\"".to_string(), "\"".to_string()],
             ],
             ignore: vec!["/details/".to_string()],
+			page2_url: None,
+			page2_ignore: vec![],
+			page2_filter: vec![vec![]],
             download_url: Some("https://archive.org/download/{repo}/{placeholder}".to_string()),
             url_items: Some(url_items),
+			html_items: Some(html_items),
 			url_start_items: Some(url_start_items),
 			url_replace_items: Some(url_replace_items)
         },
     );
 	
 	let mut url_items = HashMap::new();
+	url_items.insert("version".to_string(), vec!["/releases/".to_string(), "/".to_string()]);
+    let mut html_items = HashMap::new();
     let mut url_start_items = HashMap::new();
 	let mut url_replace_items = HashMap::new();
     
@@ -1345,8 +1378,62 @@ fn load_config() -> HashMap<String, DomainConfig> {
                 vec!["<a href=\"".to_string(), "\"".to_string()],
             ],
             ignore: vec!["#".to_string(), "?".to_string(), "netboot".to_string(), "SHA256".to_string(), "BitTorrent".to_string(), "Install".to_string(), "BurningIso".to_string(), "HowTo".to_string(), ".uk".to_string(), ".com".to_string()],
-            download_url: Some("https://cdimage.ubuntu.com/ubuntu/releases/24.04/release/{placeholder}".to_string()),
+			page2_url: None,
+			page2_ignore: vec![],
+			page2_filter: vec![vec![]],
+            download_url: Some("https://cdimage.ubuntu.com/ubuntu/releases/{version}/release/{placeholder}".to_string()),
             url_items: Some(url_items),
+			html_items: Some(html_items),
+			url_start_items: Some(url_start_items),
+			url_replace_items: Some(url_replace_items)
+        },
+    );
+	
+	let mut url_items = HashMap::new();
+	url_items.insert("version".to_string(), vec!["/kernel/".to_string(), "/".to_string()]);
+    let mut html_items = HashMap::new();
+    let mut url_start_items = HashMap::new();
+	let mut url_replace_items = HashMap::new();
+    
+	default_config.insert(
+        "cdn.kernel.org".to_string(),
+        DomainConfig {
+            filter: vec![
+                vec!["<a href=\"".to_string(), "\"".to_string()],
+            ],
+            ignore: vec!["/".to_string(), "ChangeLog".to_string()],
+			page2_url: None,
+			page2_ignore: vec![],
+			page2_filter: vec![vec![]],
+            download_url: Some("https://cdn.kernel.org/pub/linux/kernel/{version}/{placeholder}".to_string()),
+            url_items: Some(url_items),
+			html_items: Some(html_items),
+			url_start_items: Some(url_start_items),
+			url_replace_items: Some(url_replace_items)
+        },
+    );
+
+	let mut url_items = HashMap::new();
+    let mut html_items = HashMap::new();
+	html_items.insert("version".to_string(), vec!["data-bi-dlid=\"sdk-".to_string(), "-".to_string()]);
+    let mut url_start_items = HashMap::new();
+	let mut url_replace_items = HashMap::new();
+    
+	default_config.insert(
+        "dotnet.microsoft.com".to_string(),
+        DomainConfig {
+            filter: vec![
+                vec!["/en-us/download/dotnet/thank-you/".to_string(), "\"".to_string()],
+            ],
+            ignore: vec![],
+			page2_url: Some("https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/sdk-{placeholder}".to_string()),
+			page2_ignore: vec![],
+			page2_filter: vec![
+                vec!["<a href=\"https://builds.dotnet.microsoft.com/".to_string(), "\"".to_string()],
+            ],
+            download_url: None,
+            url_items: Some(url_items),
+			html_items: Some(html_items),
 			url_start_items: Some(url_start_items),
 			url_replace_items: Some(url_replace_items)
         },
@@ -1390,14 +1477,161 @@ fn parse_chunk_size(input: &str) -> usize {
     (number * multiplier as f64) as usize
 }
 
+async fn process_html(url: String, domain_config: DomainConfig, url_replacements2: HashMap<String, String>, page: i32) -> Result<(Vec<String>, Vec<String>, HashMap<String,String>, std::collections::HashMap<String,String>), String> {
+	//println!("1 {:?}", url);
+	
+	let parsed_url = Url::parse(&url).map_err(|e| e.to_string())?;
+	let mut url_replacements: HashMap<String, String> = url_replacements2.clone();
+	// Download HTML
+	let client = Client::new();
+
+	let response = client.get(&url)
+		.send()
+		.map_err(|e| e.to_string())?;
+
+	let html = response
+		.text()
+		.map_err(|e| e.to_string())?;
+	
+	//std::fs::write("out.txt", html.to_string());
+	// Apply filters
+	let mut results = vec![html.to_string()];
+
+	let mut filter = domain_config.filter.clone();
+	if page == 2 {
+		filter = domain_config.page2_filter.clone();
+		//println!("a {:?}", filter);
+	}
+	
+	for filter_pair in filter {
+		if filter_pair.len() != 2 {
+			continue;
+		}
+		
+		let start = &filter_pair[0];
+		let end = &filter_pair[1];
+		let mut new_results = Vec::new();
+		
+		for content in results {
+			new_results.extend(extract_between(&content, start, end));
+		}
+		
+		results = new_results;
+	}
+	
+	//println!("b {:?}", results);
+	let mut results2 = results.clone();
+	
+	if let Some(html_items) = domain_config.html_items {
+		for (key, patterns) in html_items {
+			if patterns.len() == 2 {
+				let start = &patterns[0];
+				let end = &patterns[1];
+				
+				if let Some(extracted_values) = extract_between(&format!("{}", &html), start, end).first() {
+					if !extracted_values.is_empty() {
+						url_replacements.insert(format!("{{{}}}", key), extracted_values.clone());
+					}
+				}
+			}
+		}
+	}
+	
+	//println!("c {:?}", url_replacements);
+	// Remove duplicates while preserving order
+	let mut seen = std::collections::HashSet::new();
+	results.retain(|item| seen.insert(item.clone()));
+	
+	// Extract URLs from results
+	let mut urls = Vec::new();
+	
+	let mut filename_betw = std::collections::HashMap::new();
+	if let Some(download_url_template) = &domain_config.download_url {
+		// Use DownloadUrl template with filter results as placeholders
+		for result in results2 {
+			let trimmed_result = result.trim();
+			// Skip empty results or results that look like HTML
+			if !trimmed_result.is_empty() && !trimmed_result.contains('<') {
+				// Don't encode if it's already a valid filename or URL component
+				let placeholder_value = if trimmed_result.contains(|c: char| {
+					c == '?' || c == '#' || c == '[' || c == ']' || c == '@' || 
+					c == '!' || c == '$' || c == '&' || c == '\'' || c == '(' || 
+					c == ')' || c == '*' || c == '+' || c == ',' || c == ';' || 
+					c == '=' || c == '%' || c == ' ' || c == '"' || c == '<' ||
+					c == '>' || c == '{' || c == '}' || c == '|' || c == '\\' ||
+					c == '^' || c == '`' || c.is_control()
+				}) {
+					urlencoding::encode(&trimmed_result.to_string()).to_string()
+				} else {
+					trimmed_result.to_string()
+				};
+				
+				if domain_config.ignore.iter().any(|ignore| trimmed_result.contains(ignore)) {
+					continue;
+				}
+				// Start with the download URL template
+				let mut download_url = download_url_template.replace("{placeholder}", &placeholder_value);
+				
+				// Replace any URL items placeholders
+				for (placeholder, value) in &url_replacements {
+					download_url = download_url.replace(placeholder, value);
+				}
+				
+				// Process UrlReplacesItems (replaces everything in list)
+				if let Some(url_replace_items) = &domain_config.url_replace_items {
+					for (key, patterns) in url_replace_items {
+						if patterns.len() == 2 {
+							let original = &patterns[0];
+							let replace = &patterns[1];
+							
+							// Extract value from URL using the patterns
+							if let Some(start_pos) = download_url.find(original) {
+								download_url = download_url.replace(original, replace);
+							}
+						}
+					}
+				}
+				
+				println!("{}", download_url);
+				urls.push(download_url.clone());
+				filename_betw.insert(download_url, trimmed_result.to_string());
+			}
+		}
+	} else {
+		// Original behavior: convert to absolute URLs
+		for result in results2 {
+			let trimmed_result = result.trim();
+			if trimmed_result.starts_with("http") {
+				urls.push(trimmed_result.to_string());
+				filename_betw.insert(trimmed_result.to_string(), trimmed_result.to_string());
+			} else if trimmed_result.starts_with('/') {
+				// Relative URL
+				let base_url = format!("{}://{}", parsed_url.scheme(), parsed_url.host_str().unwrap());
+				let download_url = format!("{}{}", base_url, trimmed_result.to_string());
+				urls.push(download_url.clone());
+				filename_betw.insert(download_url, trimmed_result.to_string());
+			} else if !trimmed_result.is_empty() && !trimmed_result.contains('<') {
+				// Might be a relative path without leading slash
+				let base_url = url.rsplit_once('/').map(|(base, _)| base).unwrap_or(&url);
+				let download_url = format!("{}/{}", base_url, trimmed_result.to_string());
+				urls.push(download_url.clone());
+				filename_betw.insert(download_url.to_string(), trimmed_result.to_string());
+			}
+		}
+	}
+	return Ok((results, urls, url_replacements, filename_betw));
+}
+
 async fn process_url(
     url: String,
     config: HashMap<String, DomainConfig>,
+	cancel_flag: Arc<AtomicBool>
 ) -> Result<Vec<DownloadItem>, String> {
     // Extract domain from URL
     let parsed_url = Url::parse(&url).map_err(|e| e.to_string())?;
     let domain = parsed_url.host_str().ok_or("Invalid URL")?;
-    
+    let cancel = cancel_flag.clone();
+	
     // Check if domain exists in config
     if let Some(domain_config) = config.get(domain) {
         // Extract URL items from the current URL if UrlItems or UrlStartItems are configured
@@ -1433,158 +1667,87 @@ async fn process_url(
                 }
             }
         }
-        
-        // Download HTML
-        let client = Client::new();
-
-		let response = client.get(&url)
-			.send()
-			.map_err(|e| e.to_string())?;
-
-		let html = response
-			.text()
-			.map_err(|e| e.to_string())?;
-        
-        // Apply filters
-        let mut results = vec![html.to_string()];
-        
-        for filter_pair in &domain_config.filter {
-            if filter_pair.len() != 2 {
-                continue;
-            }
-            
-            let start = &filter_pair[0];
-            let end = &filter_pair[1];
-            let mut new_results = Vec::new();
-            
-            for content in results {
-                new_results.extend(extract_between(&content, start, end));
-            }
-            
-            results = new_results;
-        }
-        
-        // Remove duplicates while preserving order
-        let mut seen = std::collections::HashSet::new();
-        results.retain(|item| seen.insert(item.clone()));
-        
-        // Extract URLs from results
-        let mut urls = Vec::new();
-        
-		let mut filename_betw = std::collections::HashMap::new();
-        if let Some(download_url_template) = &domain_config.download_url {
-            // Use DownloadUrl template with filter results as placeholders
-            for result in results {
+		
+		let (results, urls, url_replacements, filename_betw) = process_html(url.to_string(), domain_config.clone(), url_replacements, 1).await?;
+		
+		if !&domain_config.page2_url.is_none() {
+			let mut items:Vec<DownloadItem> = vec![];
+			for url in urls {
+				let (results2, urls2, url_replacements2, filename_betw2) = process_html(url.to_string(),domain_config.clone(), url_replacements.clone(), 2).await?;
 				
-				
-                let trimmed_result = result.trim();
-                // Skip empty results or results that look like HTML
-                if !trimmed_result.is_empty() && !trimmed_result.contains('<') {
-                    // Don't encode if it's already a valid filename or URL component
-                    let placeholder_value = if trimmed_result.contains(|c: char| {
-                        c == '?' || c == '#' || c == '[' || c == ']' || c == '@' || 
-                        c == '!' || c == '$' || c == '&' || c == '\'' || c == '(' || 
-                        c == ')' || c == '*' || c == '+' || c == ',' || c == ';' || 
-                        c == '=' || c == '%' || c == ' ' || c == '"' || c == '<' ||
-                        c == '>' || c == '{' || c == '}' || c == '|' || c == '\\' ||
-                        c == '^' || c == '`' || c.is_control()
-                    }) {
-                        urlencoding::encode(&trimmed_result.to_string()).to_string()
-                    } else {
-                        trimmed_result.to_string()
-                    };
-                    
-					if domain_config.ignore.iter().any(|ignore| trimmed_result.contains(ignore)) {
-						continue;
+				//println!("{:?}", urls2);
+				for download_url in urls2.into_iter() {
+					let cl = cancel.clone();
+					if cl.load(Ordering::Relaxed) {
+						return Err("Cancelled".to_string());
 					}
-                    // Start with the download URL template
-                    let mut download_url = download_url_template.replace("{placeholder}", &placeholder_value);
-                    
-                    // Replace any URL items placeholders
-                    for (placeholder, value) in &url_replacements {
-                        download_url = download_url.replace(placeholder, value);
-                    }
-					
-					// Process UrlReplacesItems (replaces everything in list)
-					if let Some(url_replace_items) = &domain_config.url_replace_items {
-						for (key, patterns) in url_replace_items {
-							if patterns.len() == 2 {
-								let original = &patterns[0];
-								let replace = &patterns[1];
-								
-								// Extract value from URL using the patterns
-								if let Some(start_pos) = download_url.find(original) {
-									download_url = download_url.replace(original, replace);
-								}
-							}
+		
+					let mut name_betw = String::new();
+					for (url, path2) in &filename_betw2 {
+						if url.to_string() == download_url.to_string() {
+							name_betw = path2.to_string();
 						}
 					}
-                    
-                    println!("{}", download_url);
-                    urls.push(download_url.clone());
-					filename_betw.insert(download_url, trimmed_result.to_string());
-                }
-            }
-        } else {
-            // Original behavior: convert to absolute URLs
-            for result in results {
-                let trimmed_result = result.trim();
-                if trimmed_result.starts_with("http") {
-                    urls.push(trimmed_result.to_string());
-					filename_betw.insert(trimmed_result.to_string(), trimmed_result.to_string());
-                } else if trimmed_result.starts_with('/') {
-                    // Relative URL
-                    let base_url = format!("{}://{}", parsed_url.scheme(), parsed_url.host_str().unwrap());
-					let download_url = format!("{}{}", base_url, trimmed_result.to_string());
-                    urls.push(download_url.clone());
-					filename_betw.insert(download_url, trimmed_result.to_string());
-                } else if !trimmed_result.is_empty() && !trimmed_result.contains('<') {
-                    // Might be a relative path without leading slash
-                    let base_url = url.rsplit_once('/').map(|(base, _)| base).unwrap_or(&url);
-					let download_url = format!("{}/{}", base_url, trimmed_result.to_string());
-                    urls.push(download_url.clone());
-					filename_betw.insert(download_url.to_string(), trimmed_result.to_string());
-                }
-            }
-        }
-        
-        // Apply ignore filters
-        //urls.retain(|url| {
-        //    !domain_config.ignore.iter().any(|ignore| url.contains(ignore))
-        //});
-        
-        // Create download items for all URLs
-        let items: Vec<DownloadItem> = urls.into_iter()
-            .map(|download_url| {
-				let mut name_betw = String::new();
-				for (url, path2) in &filename_betw {
-					if url.to_string() == download_url.to_string() {
-						name_betw = path2.to_string();
+					
+					let mut filename = extract_filename(&download_url);
+					if !name_betw.is_empty() {
+						filename = std::path::Path::new(&name_betw).file_name().and_then(|s| s.to_str()).unwrap_or("download").to_string();
 					}
+					
+					let di = DownloadItem {
+						url: download_url,
+						filename,
+						name_betw,
+						progress: 0.0,
+						status: DownloadStatus::Pending,
+						total_size: 0.0,
+						downloaded: 0.0,
+					};
+					Message::AddDownloadItems(vec![di]);
+					Command::perform(async {}, |_| Message::Tick);
 				}
-				
-				let mut filename = extract_filename(&download_url);
-				if !name_betw.is_empty() {
-					filename = std::path::Path::new(&name_betw).file_name().and_then(|s| s.to_str()).unwrap_or("download").to_string();
-				}
-				
-                DownloadItem {
-                    url: download_url,
-                    filename,
-					name_betw,
-                    progress: 0.0,
-                    status: DownloadStatus::Pending,
-                    total_size: 0.0,
-                    downloaded: 0.0,
-                }
-            })
-            .collect();
-        
-        if items.is_empty() {
-            Err("No URLs found after filtering".to_string())
-        } else {
-            Ok(items)
-        }
+			}
+			
+			Ok(vec![])
+		} else {
+			// Apply ignore filters
+			//urls.retain(|url| {
+			//    !domain_config.ignore.iter().any(|ignore| url.contains(ignore))
+			//});
+			
+			// Create download items for all URLs
+			let items: Vec<DownloadItem> = urls.into_iter()
+				.map(|download_url| {
+					let mut name_betw = String::new();
+					for (url, path2) in &filename_betw {
+						if url.to_string() == download_url.to_string() {
+							name_betw = path2.to_string();
+						}
+					}
+					
+					let mut filename = extract_filename(&download_url);
+					if !name_betw.is_empty() {
+						filename = std::path::Path::new(&name_betw).file_name().and_then(|s| s.to_str()).unwrap_or("download").to_string();
+					}
+					
+					DownloadItem {
+						url: download_url,
+						filename,
+						name_betw,
+						progress: 0.0,
+						status: DownloadStatus::Pending,
+						total_size: 0.0,
+						downloaded: 0.0,
+					}
+				})
+				.collect();
+			
+			if items.is_empty() {
+				Err("No URLs found after filtering".to_string())
+			} else {
+				Ok(items)
+			}
+		}
     } else {
         // No config for this domain, download directly
         let filename = extract_filename(&url);
