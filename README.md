@@ -8,3 +8,5 @@
 3. SourceForge : `https://sourceforge.net/projects/czkawka.mirror/files/10.0.0`
 4. Archive: `https://archive.org/download/ms_solitaire_windows_xp`
 5. Ubuntu : `https://cdimage.ubuntu.com/ubuntu/releases/24.04/release/`
+6. Chromium : `https://storage.googleapis.com/chromium-browser-snapshots/`
+7. Dotnet : `https://builds.dotnet.microsoft.com/dotnet/release-metadata/9.0/releases.json`
