@@ -14,3 +14,4 @@
 9. 7-zip : `https://7-zip.org/download.html`
 10. Python : `https://www.python.org/ftp/python/3.9.9/`
 11. Go : `https://go.dev/dl/`
+12. Chromium win : `https://www.googleapis.com/storage/v1/b/chromium-browser-snapshots/o?delimiter=/&prefix=Win_x64/1512001/&fields=items(kind,mediaLink,metadata,name,size,updated),kind,prefixes,nextPageToken`
