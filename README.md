@@ -10,3 +10,4 @@
 5. Ubuntu : `https://cdimage.ubuntu.com/ubuntu/releases/24.04/release/`
 6. Chromium : `https://storage.googleapis.com/chromium-browser-snapshots/`
 7. Dotnet : `https://builds.dotnet.microsoft.com/dotnet/release-metadata/9.0/releases.json`
+8. Rust : `https://forge.rust-lang.org/infra/other-installation-methods.html`
