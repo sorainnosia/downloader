@@ -4,7 +4,7 @@
 
 use iced::{
     executor, font, theme,
-    widget::{button, column, container, progress_bar, row, scrollable, text, text_input, Space,
+    widget::{button, column, container, progress_bar, row, scrollable, scrollable::Direction, scrollable::Properties, text, text_input, Space,
 	horizontal_rule},
 	window::{Settings as WinSettings},
     Alignment, Application, Color, Command, Element, Font, Length, Settings, Size, Theme, Background, Border,
@@ -1012,98 +1012,235 @@ impl Application for Downloader {
         // Help overlay
         if self.show_help {
             let help_content = card_container(
-                column![
-                    row![
-                        section_title("Example Download URLs"),
-                        Space::with_width(Length::Fill),
-                        button(
-                            text("X")
-                                .size(16)
-                                .horizontal_alignment(iced::alignment::Horizontal::Center)
-                        )
-                        .on_press(Message::CloseHelp)
-                        .padding([4, 8])
-                        .style(theme::Button::Text),
-                    ],
-                    
-                    Space::with_height(16),
-                    
-                    //labeled_input(
-                        text("GitHub Release:")
-			            .size(13)
-			            .font(BODY_FONT)
-			            .style(TEXT_SECONDARY),
-			            Space::with_height(6),
-			            //"GitHub Release:",
-                        text_input("", "https://github.com/sorainnosia/image-resizer-advanced/releases/expanded_assets/0.1.1")
-                            .padding([4, 8])
-                            .font(BODY_FONT)
-                            .on_input(Message::None)
-                            .size(13),
-                    //),
-                    
-                    Space::with_height(12),
-                    
-                    //labeled_input(
-                        text("Huggingface API:")
-			            .size(13)
-			            .font(BODY_FONT)
-			            .style(TEXT_SECONDARY),
-			            Space::with_height(6),
-			            //"Huggingface API:",
-                        text_input("", "https://huggingface.co/api/models/hexgrad/Kokoro-82M")
-                            .padding([4, 8])
-                            .font(BODY_FONT)
-                            .on_input(Message::None)
-                            .size(13),
-                    //),
-                    
-                    Space::with_height(12),
-                    
-                    //labeled_input(
-                        text("SourceForge Release:")
-			            .size(13)
-			            .font(BODY_FONT)
-			            .style(TEXT_SECONDARY),
-			            Space::with_height(6),
-			            //"SourceForge Release:",
-                        text_input("", "https://sourceforge.net/projects/czkawka.mirror/files/10.0.0")
-                            .padding([4, 8])
-                            .font(BODY_FONT)
-                            .on_input(Message::None)
-                            .size(13),
-                   // ),
-                    
-                    Space::with_height(12),
-                    
-                    //labeled_input(
-                    	text("Archive.org Downloads:")
-			            .size(13)
-			            .font(BODY_FONT)
-			            .style(TEXT_SECONDARY),
-			            Space::with_height(6),
-                        //"Archive.org Downloads:",
-                        text_input("", "https://archive.org/download/ms_solitaire_windows_xp")
-                            .padding([4, 8])
-                            .font(BODY_FONT)
-                            .on_input(Message::None)
-                            .size(13),
-                    //),
-                    
-                    Space::with_height(16),
-                    
-                    container(
-                        text("Click on any URL above to select and copy it")
-                            .font(BODY_FONT)
-                            .size(12)
-                            .style(TEXT_MUTED)
-                    )
-                    .width(Length::Fill)
-                    .center_x(),
-                ].spacing(0)
+				column![
+					row![
+						section_title("Example Download URLs"),
+						Space::with_width(Length::Fill),
+						button(
+							text("X")
+								.size(16)
+								.horizontal_alignment(iced::alignment::Horizontal::Center)
+						)
+						.on_press(Message::CloseHelp)
+						.padding([4, 8])
+						.style(theme::Button::Text),
+					],
+					
+					Space::with_height(16),
+					scrollable(
+						container(
+							column![
+								//labeled_input(
+									text("GitHub Release:")
+									.size(13)
+									.font(BODY_FONT)
+									.style(TEXT_SECONDARY),
+									Space::with_height(6),
+									//"GitHub Release:",
+									text_input("", "https://github.com/sorainnosia/image-resizer-advanced/releases/expanded_assets/0.1.1")
+										.padding([4, 8])
+										.font(BODY_FONT)
+										.on_input(Message::None)
+										.size(13),
+								//),
+								
+								Space::with_height(12),
+								
+								//labeled_input(
+									text("Huggingface API:")
+									.size(13)
+									.font(BODY_FONT)
+									.style(TEXT_SECONDARY),
+									Space::with_height(6),
+									//"Huggingface API:",
+									text_input("", "https://huggingface.co/api/models/hexgrad/Kokoro-82M")
+										.padding([4, 8])
+										.font(BODY_FONT)
+										.on_input(Message::None)
+										.size(13),
+								//),
+								
+								Space::with_height(12),
+								
+								//labeled_input(
+									text("SourceForge Release:")
+									.size(13)
+									.font(BODY_FONT)
+									.style(TEXT_SECONDARY),
+									Space::with_height(6),
+									//"SourceForge Release:",
+									text_input("", "https://sourceforge.net/projects/czkawka.mirror/files/10.0.0")
+										.padding([4, 8])
+										.font(BODY_FONT)
+										.on_input(Message::None)
+										.size(13),
+							   // ),
+								
+								Space::with_height(12),
+								
+								//labeled_input(
+									text("Archive.org Downloads:")
+									.size(13)
+									.font(BODY_FONT)
+									.style(TEXT_SECONDARY),
+									Space::with_height(6),
+									//"Archive.org Downloads:",
+									text_input("", "https://archive.org/download/ms_solitaire_windows_xp")
+										.padding([4, 8])
+										.font(BODY_FONT)
+										.on_input(Message::None)
+										.size(13),
+								//),
+								
+								Space::with_height(12),
+								
+								//labeled_input(
+									text("Ubuntu Downloads:")
+									.size(13)
+									.font(BODY_FONT)
+									.style(TEXT_SECONDARY),
+									Space::with_height(6),
+									//"Archive.org Downloads:",
+									text_input("", "https://cdimage.ubuntu.com/ubuntu/releases/24.04/release/")
+										.padding([4, 8])
+										.font(BODY_FONT)
+										.on_input(Message::None)
+										.size(13),
+								//),
+								
+								Space::with_height(12),
+								
+								//labeled_input(
+									text("Chromium Downloads:")
+									.size(13)
+									.font(BODY_FONT)
+									.style(TEXT_SECONDARY),
+									Space::with_height(6),
+									//"Archive.org Downloads:",
+									text_input("", "https://storage.googleapis.com/chromium-browser-snapshots/")
+										.padding([4, 8])
+										.font(BODY_FONT)
+										.on_input(Message::None)
+										.size(13),
+								//),
+								
+								Space::with_height(12),
+								
+								//labeled_input(
+									text("Dotnet Downloads:")
+									.size(13)
+									.font(BODY_FONT)
+									.style(TEXT_SECONDARY),
+									Space::with_height(6),
+									//"Archive.org Downloads:",
+									text_input("", "https://builds.dotnet.microsoft.com/dotnet/release-metadata/9.0/releases.json")
+										.padding([4, 8])
+										.font(BODY_FONT)
+										.on_input(Message::None)
+										.size(13),
+								//),
+								
+								Space::with_height(12),
+								
+								//labeled_input(
+									text("Rust Downloads:")
+									.size(13)
+									.font(BODY_FONT)
+									.style(TEXT_SECONDARY),
+									Space::with_height(6),
+									//"Archive.org Downloads:",
+									text_input("", "https://forge.rust-lang.org/infra/other-installation-methods.html")
+										.padding([4, 8])
+										.font(BODY_FONT)
+										.on_input(Message::None)
+										.size(13),
+								//),
+								
+								Space::with_height(12),
+								
+								//labeled_input(
+									text("7-zip Downloads:")
+									.size(13)
+									.font(BODY_FONT)
+									.style(TEXT_SECONDARY),
+									Space::with_height(6),
+									//"Archive.org Downloads:",
+									text_input("", "https://7-zip.org/download.html")
+										.padding([4, 8])
+										.font(BODY_FONT)
+										.on_input(Message::None)
+										.size(13),
+								//),
+								
+								Space::with_height(12),
+								
+								//labeled_input(
+									text("Python Downloads:")
+									.size(13)
+									.font(BODY_FONT)
+									.style(TEXT_SECONDARY),
+									Space::with_height(6),
+									//"Archive.org Downloads:",
+									text_input("", "https://www.python.org/ftp/python/3.9.9/")
+										.padding([4, 8])
+										.font(BODY_FONT)
+										.on_input(Message::None)
+										.size(13),
+								//),
+								
+								Space::with_height(12),
+								
+								//labeled_input(
+									text("Go Downloads:")
+									.size(13)
+									.font(BODY_FONT)
+									.style(TEXT_SECONDARY),
+									Space::with_height(6),
+									//"Archive.org Downloads:",
+									text_input("", "https://go.dev/dl/")
+										.padding([4, 8])
+										.font(BODY_FONT)
+										.on_input(Message::None)
+										.size(13),
+								//),
+								
+								Space::with_height(12),
+								
+								//labeled_input(
+									text("Chromium Win x64 Downloads:")
+									.size(13)
+									.font(BODY_FONT)
+									.style(TEXT_SECONDARY),
+									Space::with_height(6),
+									//"Archive.org Downloads:",
+									text_input("", "https://www.googleapis.com/storage/v1/b/chromium-browser-snapshots/o?delimiter=/&prefix=Win_x64/1512001/&fields=items(kind,mediaLink,metadata,name,size,updated),kind,prefixes,nextPageToken")
+										.padding([4, 8])
+										.font(BODY_FONT)
+										.on_input(Message::None)
+										.size(13),
+								//),
+								
+								Space::with_height(16),
+								
+								container(
+									text("Click on any URL above to select and copy it")
+										.font(BODY_FONT)
+										.size(12)
+										.style(TEXT_MUTED)
+								)
+								.width(Length::Fill)
+								.center_x()
+							]
+						)
+						.padding([0, 20, 0, 0])
+					)
+					.height(300)
+					.direction(Direction::Vertical(Properties::default()))
+				].spacing(0)
             );
             
             // Create overlay with modal centered
+			/*
             container(
                 container(help_content)
                     .max_width(600)
@@ -1116,6 +1253,23 @@ impl Application for Downloader {
             .center_y()
             .style(theme::Container::Custom(Box::new(OverlayBackground)))
             .into()
+			*/
+			
+			let content = container(help_content)
+				.max_width(600)
+				.center_x();                 // keep horizontal centering
+				// .center_y()  // ❌ avoid for scroll content
+			
+			let content2 = container(content)
+				.width(Length::Fill)
+				.height(Length::Fill)
+				.center_x()
+				.center_y()
+				.style(theme::Container::Custom(Box::new(OverlayBackground)));
+
+			//let scrolled = scrollable(content2);
+
+			return content2.into();
         } else {
             main_view.into()
         }
