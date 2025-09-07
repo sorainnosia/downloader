@@ -2,6 +2,8 @@
 
 <img width="550" alt="image" src="https://github.com/user-attachments/assets/d4488586-ffdc-4d9b-bb83-27396304153e" />
 
+A tiny multi-purpose downloader with User Interface that enables to scrape list of files from a page and download all the files. A fix amount of website path is configured in the configuration generated after program is run, users or developers can edit the configuration to enable to scrape files for websites they want to support.
+
 ## Example
 1. Github : `https://github.com/sorainnosia/image-resizer-advanced/releases/expanded_assets/0.1.1`
 2. Hugging Face : `https://huggingface.co/api/models/hexgrad/Kokoro-82M`
